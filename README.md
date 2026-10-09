@@ -50,7 +50,3 @@ Dopo ogni modifica al codice, crea una nuova versione della distribuzione (**Dep
 ├── Index.html   # Interfaccia utente
 └── README.md
 ```
-
-## Licenza
-
-MIT. Vedi il file `LICENSE`.
