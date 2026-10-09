@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Le mie spese</title>
+<style>
+  :root {
+    --bg: #eef2ee; --ink: #1c2b25; --muted: #5f6f67; --line: #cfd8d2;
+    --accent: #1f5c4a; --accent-ink: #fff; --error: #a23a2a; --panel: #fff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: Georgia, "Iowan Old Style", serif; line-height: 1.5; }
+  main { max-width: 480px; margin: 0 auto; padding: 24px 18px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 20px; font-weight: 600; }
+  h2 { font-size: 1.05rem; margin: 0; }
+  form, .panel { background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px; }
+  form { display: grid; gap: 14px; }
+  label { display: grid; gap: 6px; font-size: .95rem; color: var(--muted); }
+  input, select { font: inherit; font-size: 1.05rem; color: var(--ink); padding: 11px 12px;
+    border: 1px solid var(--line); border-radius: 6px; background: #fbfdfb; width: 100%; }
+  input:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 3px solid #7fb8a4; outline-offset: 1px; }
+  #importo { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+  .primario { font: inherit; font-weight: 600; padding: 13px; border: 0; border-radius: 6px;
+    background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+  .primario:disabled { opacity: .6; cursor: wait; }
+  #msg { min-height: 1.4em; margin: 0; font-size: .95rem; }
+  #msg.err { color: var(--error); } #msg.ok { color: var(--accent); }
+
+  .riepilogo { margin-top: 28px; }
+  .testa { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .testa input { width: auto; font-size: .95rem; padding: 8px 10px; }
+  .totale { font-size: 2rem; font-variant-numeric: tabular-nums; margin: 0 0 14px; }
+  .cat { display: grid; grid-template-columns: 90px 1fr auto; gap: 10px; align-items: center;
+    font-size: .95rem; padding: 4px 0; }
+  .barra { height: 8px; background: #e3ebe6; border-radius: 4px; overflow: hidden; }
+  .barra i { display: block; height: 100%; background: var(--accent); }
+  .cat span:last-child { font-variant-numeric: tabular-nums; }
+
+  h2.lista-titolo { margin: 28px 0 8px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--line); }
+  li .desc { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  li small { display: block; color: var(--muted); }
+  li .imp { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .elimina { font: inherit; background: none; border: 1px solid var(--line); color: var(--error);
+    border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  .elimina:disabled { opacity: .5; cursor: wait; }
+  .vuoto { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Le mie spese</h1>
+
+  <form id="form">
+    <label>Importo (€)
+      <input id="importo" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="0,00" required>
+    </label>
+    <label>Categoria
+      <select id="categoria"></select>
+    </label>
+    <label>Descrizione (opzionale)
+      <input id="descrizione" type="text" maxlength="120" placeholder="Es. Spesa al supermercato (opzionale)">
+    </label>
+    <button id="salva" class="primario" type="submit">Salva spesa</button>
+    <p id="msg" role="status"></p>
+  </form>
+
+  <section class="panel riepilogo" aria-labelledby="t-riepilogo">
+    <div class="testa">
+      <h2 id="t-riepilogo">Riepilogo</h2>
+      <input id="mese" type="month" aria-label="Mese">
+    </div>
+    <p class="totale" id="totale">–</p>
+    <div id="categorie"></div>
+  </section>
+
+  <h2 class="lista-titolo">Spese del mese</h2>
+  <ul id="lista"><li class="vuoto">Caricamento…</li></ul>
+</main>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const euro = n => n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+  let tutte = [];
+
+  function messaggio(testo, tipo) { $('msg').textContent = testo; $('msg').className = tipo || ''; }
+
+  function chiaveMese(ts) {
+    const d = new Date(ts);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  function disegna() {
+    const mese = $('mese').value;
+    const righe = tutte.filter(r => chiaveMese(r.ts) === mese).sort((a, b) => b.ts - a.ts);
+    const totale = righe.reduce((s, r) => s + r.importo, 0);
+    $('totale').textContent = euro(totale);
+
+    // ripartizione per categoria
+    const perCat = {};
+    righe.forEach(r => perCat[r.categoria] = (perCat[r.categoria] || 0) + r.importo);
+    const box = $('categorie');
+    box.innerHTML = '';
+    const voci = Object.entries(perCat).sort((a, b) => b[1] - a[1]);
+    if (!voci.length) box.innerHTML = '<p class="vuoto">Nessuna spesa in questo mese.</p>';
+    voci.forEach(([nome, val]) => {
+      const div = document.createElement('div');
+      div.className = 'cat';
+      const n = document.createElement('span'); n.textContent = nome;
+      const b = document.createElement('div'); b.className = 'barra';
+      const i = document.createElement('i'); i.style.width = (val / totale * 100) + '%';
+      b.appendChild(i);
+      const v = document.createElement('span'); v.textContent = euro(val);
+      div.append(n, b, v);
+      box.appendChild(div);
+    });
+
+    // elenco con eliminazione
+    const lista = $('lista');
+    lista.innerHTML = '';
+    if (!righe.length) { lista.innerHTML = '<li class="vuoto">Nessuna spesa registrata.</li>'; return; }
+    righe.forEach(r => {
+      const li = document.createElement('li');
+      const sx = document.createElement('div'); sx.className = 'desc';
+      const testoDesc = r.descrizione || r.categoria;
+      sx.textContent = testoDesc;
+      const small = document.createElement('small');
+      small.textContent = new Date(r.ts).toLocaleDateString('it-IT') + ' · ' + r.categoria;
+      sx.appendChild(small);
+      const imp = document.createElement('div'); imp.className = 'imp'; imp.textContent = euro(r.importo);
+      const del = document.createElement('button');
+      del.className = 'elimina'; del.type = 'button'; del.textContent = 'Elimina';
+      del.setAttribute('aria-label', 'Elimina ' + testoDesc);
+      del.addEventListener('click', () => elimina(r, del));
+      li.append(sx, imp, del);
+      lista.appendChild(li);
+    });
+  }
+
+  function elimina(r, btn) {
+    const nomeVoce = r.descrizione || r.categoria;
+    if (!confirm('Eliminare "' + nomeVoce + '" (' + euro(r.importo) + ')?')) return;
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(() => { messaggio('Spesa eliminata.', 'ok'); carica(); })
+      .withFailureHandler(e => { btn.disabled = false; messaggio(e.message, 'err'); })
+      .eliminaSpesa(r.riga, r.ts);
+  }
+
+  function carica() {
+    google.script.run
+      .withSuccessHandler(dati => {
+        tutte = dati.righe;
+        if (!$('categoria').options.length) {
+          dati.categorie.forEach(c => $('categoria').add(new Option(c, c)));
+        }
+        disegna();
+      })
+      .withFailureHandler(e => messaggio(e.message, 'err'))
+      .leggiSpese();
+  }
+
+  $('form').addEventListener('submit', e => {
+    e.preventDefault();
+    $('salva').disabled = true;
+    messaggio('Salvataggio in corso…');
+    const cat = $('categoria').value;
+    google.script.run
+      .withSuccessHandler(() => {
+        $('form').reset();
+        $('categoria').value = cat;
+        $('mese').value = chiaveMese(Date.now());
+        $('salva').disabled = false;
+        messaggio('Spesa salvata.', 'ok');
+        $('importo').focus();
+        carica();
+      })
+      .withFailureHandler(err => { $('salva').disabled = false; messaggio(err.message, 'err'); })
+      .aggiungiSpesa($('descrizione').value, $('importo').value, cat);
+  });
+
+  $('mese').value = chiaveMese(Date.now());
+  $('mese').addEventListener('change', disegna);
+  carica();
+</script>
+</body>
+</html>
